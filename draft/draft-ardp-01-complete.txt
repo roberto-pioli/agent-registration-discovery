@@ -1,0 +1,304 @@
+
+Internet-Draft                                                  ARDP
+Intended status: Informational                              ARDP-01
+Expires: July 2026                                         January 2026
+
+        Agent Registration and Discovery Protocol (ARDP)
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as “work in progress.”
+
+Abstract
+
+   This document specifies the Agent Registration and Discovery Protocol
+   (ARDP), a lightweight protocol for registering, discovering, and
+   reaching autonomous software agents in distributed and federated
+   environments. ARDP provides stable agent identities, dynamic endpoint
+   resolution, capability advertisement (including protocol selection
+   among MCP, A2A, HTTP, and gRPC), minimal presence signaling, and a
+   security-first discovery control plane. ARDP is transport-agnostic
+   and complementary to existing agent interaction protocols.
+
+Table of Contents
+   1. Introduction
+   2. Design Goals
+   3. Terminology
+   4. Architecture Overview
+   5. Agent Identity
+   6. Registration Model
+   7. Discovery and Resolution
+   8. Capabilities
+   9. Presence and Health
+   10. Security Considerations
+   11. Federation
+   12. Relationship to Existing Protocols
+   13. Wire Format Sketch (Non-Normative)
+   14. IANA Considerations
+   15. Capability Schema v0
+   16. Open Issues
+   17. References
+
+1. Introduction
+
+   The proliferation of autonomous and semi-autonomous software agents
+   introduces challenges in discoverability, reachability, and
+   interoperability. Agents may be ephemeral, mobile across execution
+   environments, and implemented by heterogeneous vendors.
+
+   ARDP addresses:
+   * Stable addressing of agents whose runtime location changes
+   * Authorized discovery by identity and declared capabilities
+   * Capability-driven selection among interaction protocols
+     (e.g., MCP, A2A, HTTP, gRPC)
+   * Minimal, privacy-aware presence signaling
+
+2. Design Goals
+
+   1. Stable Identity
+   2. Dynamic Reachability
+   3. Minimalism (control plane only)
+   4. Security by Default
+   5. Federation-Friendly
+   6. Extensibility
+
+3. Terminology
+
+   Agent
+      Autonomous software entity capable of initiating and receiving
+      interactions.
+
+   Agent Identifier (AID)
+      Stable, namespaced identifier of the form:
+         agent:<local-id>@<domain>
+
+   Registrar
+      Service that accepts agent registrations and maintains bindings.
+
+   Resolver
+      Service that resolves an AID to active endpoints.
+
+   Endpoint
+      Network location and protocol tuple through which an agent can be
+      reached.
+
+   Capability
+      Declarative description of supported protocols and interaction
+      modes.
+
+4. Architecture Overview
+
+   ARDP defines a logical control plane composed of registrars and
+   resolvers. Agents register their presence and capabilities with a
+   registrar. Authorized clients query resolvers to obtain endpoint and
+   capability information.
+
+5. Agent Identity
+
+   Each agent SHALL have a unique AID. The domain component denotes the
+   administrative authority responsible for the identity.
+
+   Agents MUST prove control of an AID during registration using
+   cryptographic credentials bound to that identity.
+
+5.1. AID Syntax
+
+   An ARDP Agent Identifier (AID) MUST follow this grammar:
+
+   aid        = "agent:" local-id "@" authority
+   local-id   = 1*( ALPHA / DIGIT / "_" / "-" / "." / "/" )
+   authority  = dns-name / internal-name / opaque-authority
+   dns-name   = IDNA2008 label "." IDNA2008 label *( "." IDNA2008 label )
+   internal-name = 1*( ALPHA / DIGIT / "-" / "." )
+   opaque-authority = "tenant-" 1*( ALPHA / DIGIT / "-" )
+
+5.2. Canonical Form
+
+   The canonical AID string is:
+   1) "agent:" literal prefix in lowercase.
+   2) authority normalized to lowercase using IDNA2008; internal-name is
+      lowercased as-is.
+   3) local-id is case-sensitive and MUST be preserved as sent.
+   4) AIDs MUST be compared using the canonical form.
+
+6. Registration Model
+
+6.1. REGISTER
+
+   A REGISTER request includes:
+   * AID
+   * One or more endpoints
+   * Capability document (versioned)
+   * TTL
+   * Cryptographic proof
+
+   Registrations are soft-state and MUST be refreshed before expiration.
+
+6.2. DEREGISTER
+
+   An agent MAY explicitly remove its registration.
+
+6.3. Registration Semantics
+
+   Registration is idempotent on (aid, binding_id).
+   If a client sends the same (aid, binding_id), the server MUST treat it
+   as a refresh.
+   If a client sends the same aid with a different binding_id, the server
+   MUST return 409 unless the client has "registry:override" scope.
+
+6.4. TTL and Refresh
+
+   The server MUST be authoritative for expires_at and SHOULD return it
+   in responses.
+   Clients SHOULD refresh at <= 0.5 * ttl with random jitter.
+   The server MUST define and enforce TTL bounds and advertise them in
+   /meta.
+
+7. Discovery and Resolution
+
+7.1. RESOLVE
+
+   Resolves an AID to active endpoints and capabilities. Access MUST be
+   authorized.
+
+7.2. QUERY
+
+   Allows authorized discovery by capability or namespace. Results
+   SHOULD be minimized to prevent metadata leakage.
+
+7.3. Privacy Defaults and Redaction
+
+   By default, query returns only aid and status. Clients MAY request
+   full details via a "detail=full" parameter.
+   If redaction applies, the server MUST omit restricted fields and
+   include "redacted": true in the response.
+
+8. Capabilities
+
+   Capability documents MAY include:
+   * Supported protocols (MCP, A2A, HTTP, gRPC)
+   * Transport bindings
+   * Authentication mechanisms
+   * Modalities
+   * Rate or cost hints
+   * Protocol-specific metadata
+
+   Capabilities are declarative and do not imply authorization.
+
+8.1. Capability Bindings
+
+   Capabilities MUST include protocol-specific bindings when a protocol
+   is declared. Examples:
+   * MCP: protocol_metadata.mcp.server_info, tool_schemas, version
+   * A2A: protocol_metadata.a2a.version, transport, addressing
+   * gRPC: protocol_metadata.grpc.services, proto_refs, reflection
+
+9. Presence and Health
+
+   Presence is limited to:
+   * online
+   * offline
+   * degraded
+
+10. Security Considerations
+
+   Threats include identity spoofing, registration poisoning,
+   unauthorized discovery, replay and downgrade attacks, and registrar
+   compromise.
+
+   Mitigations include cryptographic identity proof, signed
+   registrations, strict authorization, rate limiting, and audit
+   logging.
+
+10.1. Proof of Control (Mandatory Profile)
+
+   Clients MUST present a JWS-signed proof for register and refresh.
+   The signed payload is the canonical JSON of the registration body
+   plus:
+   - nonce: server-provided nonce
+   - issued_at: RFC3339 timestamp
+
+   Servers MUST verify the JWS using a JWKS URL discovered from the
+   authority domain or configured per tenant. Replay windows MUST be
+   enforced.
+
+10.2. Authorization Scopes
+
+   Operations require scopes:
+   - register: registry:register
+   - refresh: registry:refresh
+   - resolve: registry:resolve
+   - query: registry:query
+   - deregister: registry:deregister
+
+11. Federation
+
+   Registrars MAY federate across domains via explicit trust
+   relationships and policy agreements.
+
+11.1. Federation Profile (Minimum)
+
+   Federation is allowed only between explicit trust anchors.
+   Responses from remote registrars MUST include provenance fields:
+   origin_authority, origin_registrar_id, origin_signature.
+   Caches MUST honor remote TTL and mark records as federated.
+
+12. Relationship to Existing Protocols
+
+   ARDP complements, and does not replace, agent interaction protocols
+   such as MCP and A2A.
+
+13. Wire Format Sketch (Non-Normative)
+
+   JSON over HTTPS is shown as an example binding. Alternative encodings
+   (e.g., CBOR, gRPC) are possible.
+
+13.1. Error Model
+
+   Servers MUST return errors with:
+   - code: stable error code
+   - message: human-readable
+   - correlation_id: for tracing
+   Required codes: invalid_aid, unauthorized, forbidden, conflict,
+   not_found, expired.
+
+14. IANA Considerations
+
+14.1. Well-Known URI
+
+   IANA is requested to register the following URI suffix per RFC 8615:
+
+   URI suffix: ardp
+   Change controller: IETF
+   Specification document(s): This document
+
+14.2. Agent Identifier Namespace
+
+   The "agent:" prefix is used as an internal identifier namespace and
+   is not registered as a URI scheme in this version.
+
+15. Capability Schema v0
+
+   A minimal JSON schema for capability documents is provided in the
+   accompanying file.
+
+16. Open Issues
+
+   * Capability schema evolution
+   * Privacy-preserving discovery
+   * Federation bootstrapping
+
+17. References
+
+   RFC 8615: Well-Known URIs
