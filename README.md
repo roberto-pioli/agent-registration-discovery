@@ -4,7 +4,7 @@ Author: **Roberto Pioli**
 
 This repository contains supporting materials for the IETF Internet-Draft:
 
-- `draft-pioli-agent-discovery-01`
+- `draft-pioli-agent-discovery-00`
 
 The authoritative version of the specification is published via the IETF
 Datatracker. This repository is a collaboration mirror only.
@@ -29,8 +29,8 @@ ARDP explicitly does **not** define:
 
 ## Repository contents
 
-- `draft/draft-pioli-agent-discovery-01.xml` — xml2rfc v3 source (for IETF submission)
-- `draft/draft-pioli-agent-discovery-01.txt` — text rendering
+- `draft/draft-pioli-agent-discovery-00.xml` — xml2rfc v3 source (for IETF submission)
+- `draft/draft-pioli-agent-discovery-00.txt` — text rendering
 - `docs/` — DISPATCH problem statement and submission guidance
 
 ## How to engage

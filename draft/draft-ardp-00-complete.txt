@@ -1,6 +1,6 @@
 
 Internet-Draft                                                  ARDP
-Intended status: Informational                              ARDP-01
+Intended status: Informational                              ARDP-00
 Expires: July 2026                                         January 2026
 
         Agent Registration and Discovery Protocol (ARDP)
