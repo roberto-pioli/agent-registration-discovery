@@ -4,7 +4,7 @@
      category="info"
      ipr="trust200902"
      submissionType="IETF"
-     docName="draft-pioli-agent-discovery-01"
+     docName="draft-pioli-agent-discovery-00"
      xml:lang="en">
   <front>
     <title>Agent Registration and Discovery Protocol (ARDP)</title>

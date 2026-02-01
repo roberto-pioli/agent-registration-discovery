@@ -1,6 +1,6 @@
 
 Internet-Draft                                                  ARDP
-Intended status: Informational                              draft-pioli-agent-discovery-01
+Intended status: Informational                              draft-pioli-agent-discovery-00
 Expires: July 2026                                         January 2026
 
         Agent Registration and Discovery Protocol (ARDP)
