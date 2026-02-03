@@ -14,7 +14,7 @@
         <email>roberto.pioli@gmail.com</email>
       </address>
     </author>
-    <date year="2026" month="January"/>
+    <date year="2026" month="February"/>
     <abstract>
       <t>This document specifies the Agent Registration and Discovery Protocol (ARDP), a lightweight protocol for registering, discovering,
       and reaching autonomous software agents in distributed and federated environments. ARDP provides stable agent identities, dynamic endpoint
