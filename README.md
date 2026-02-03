@@ -4,10 +4,12 @@ Author: **Roberto Pioli**
 
 This repository contains supporting materials for the IETF Internet-Draft:
 
-- `draft-pioli-agent-discovery-00`
+- [`draft-pioli-agent-discovery-00`](https://datatracker.ietf.org/doc/draft-pioli-agent-discovery/)
 
 The authoritative version of the specification is published via the IETF
 Datatracker. This repository is a collaboration mirror only.
+
+**Datatracker:** https://datatracker.ietf.org/doc/draft-pioli-agent-discovery/
 
 ## Status
 
@@ -35,7 +37,7 @@ ARDP explicitly does **not** define:
 
 ## How to engage
 
-1. Review the draft on the IETF Datatracker  
+1. [Review the draft on the IETF Datatracker](https://datatracker.ietf.org/doc/draft-pioli-agent-discovery/)  
 2. Participate in discussion on the relevant IETF mailing lists  
 3. Use GitHub issues or pull requests for editorial and technical suggestions
 
