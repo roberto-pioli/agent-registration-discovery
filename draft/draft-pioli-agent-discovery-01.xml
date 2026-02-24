@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE rfc SYSTEM "rfc2629.dtd">
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude"
+     category="info"
+     ipr="trust200902"
+     submissionType="IETF"
+     docName="draft-pioli-agent-discovery-01"
+     xml:lang="en">
+  <front>
+    <title>Agent Registration and Discovery Protocol (ARDP)</title>
+    <author fullname="Roberto Pioli" surname="Pioli" initials="R.">
+      <organization>Independent</organization>
+      <address>
+        <email>roberto.pioli@gmail.com</email>
+      </address>
+    </author>
+    <date year="2026" month="February"/>
+    <abstract>
+      <t>This document specifies the Agent Registration and Discovery Protocol (ARDP), a lightweight protocol for registering, discovering,
+      and reaching autonomous software agents in distributed and federated environments. ARDP provides stable agent identities, dynamic endpoint
+      resolution, capability advertisement (including protocol selection among MCP, A2A, HTTP, and gRPC), minimal presence signaling, and a
+      security-first discovery control plane. ARDP is transport-agnostic and complementary to existing agent interaction protocols.</t>
+    </abstract>
+  </front>
+
+  <middle>
+    <section title="Introduction">
+      <t>Autonomous and semi-autonomous software agents introduce challenges in discoverability, reachability, and interoperability. Agents may
+      be ephemeral, mobile across execution environments, and implemented by heterogeneous vendors.</t>
+      <t>ARDP addresses stable addressing of agents whose runtime location changes, authorized discovery by identity and declared capabilities,
+      capability-driven selection among interaction protocols (e.g., MCP, A2A, HTTP, gRPC), and minimal, privacy-aware presence signaling.</t>
+    </section>
+
+    <section title="Design Goals">
+      <t>Stable Identity; Dynamic Reachability; Minimalism (control plane only); Security by Default; Federation-Friendly; Extensibility.</t>
+    </section>
+
+    <section title="Non-Goals">
+      <t>ARDP is intentionally narrow in scope. The following are explicitly out of scope for this specification:</t>
+      <t><list style="numbers">
+        <t>Agent-to-agent interaction, session management, task execution, and tool invocation protocols. These are addressed by interaction protocols such as MCP and A2A.</t>
+        <t>Identity governance frameworks, IAM policy languages, and organizational trust models. ARDP accepts identity attestations as inputs but does not define how they are issued or governed.</t>
+        <t>Runtime authorization token formats and enforcement proxies. ARDP provides discovery-time authorization scopes; runtime enforcement is delegated to interaction layers.</t>
+        <t>Post-execution evidence, audit trails, compliance logging formats, and non-repudiation mechanisms.</t>
+        <t>Billing, accounting, reputation, benchmarking, and other business frameworks.</t>
+        <t>Naming and bootstrap mechanisms beyond locating an ARDP authority. DNS-based discovery, well-known URIs, or other bootstrap mechanisms may be used alongside ARDP.</t>
+        <t>Centralization requirements. ARDP supports domain-scoped authorities and explicit federation without mandating a single global registry.</t>
+      </list></t>
+    </section>
+
+    <section title="Terminology">
+      <t>The key words <bcp14>MUST</bcp14>, <bcp14>MUST NOT</bcp14>, <bcp14>REQUIRED</bcp14>, <bcp14>SHALL</bcp14>,
+      <bcp14>SHALL NOT</bcp14>, <bcp14>SHOULD</bcp14>, <bcp14>SHOULD NOT</bcp14>, <bcp14>RECOMMENDED</bcp14>,
+      <bcp14>NOT RECOMMENDED</bcp14>, <bcp14>MAY</bcp14>, and <bcp14>OPTIONAL</bcp14> are to be interpreted as described in RFC 2119 and RFC 8174.</t>
+      <t><list style="symbols">
+        <t>Agent: Autonomous software entity capable of initiating and receiving interactions.</t>
+        <t>Agent Identifier (AID): Stable, namespaced identifier of the form <tt>agent:&lt;local-id&gt;@&lt;authority&gt;</tt>.</t>
+        <t>Registrar: Service that accepts agent registrations and maintains bindings.</t>
+        <t>Resolver: Service that resolves an AID to active endpoints.</t>
+        <t>Endpoint: Network location and protocol tuple through which an agent can be reached.</t>
+        <t>Capability: Declarative description of supported protocols and interaction modes.</t>
+      </list></t>
+    </section>
+
+    <section title="Architecture Overview">
+      <t>ARDP defines a logical control plane composed of registrars and resolvers. Agents register their presence and capabilities with a registrar.
+      Authorized clients query resolvers to obtain endpoint and capability information.</t>
+    </section>
+
+    <section title="Layering and Composition">
+      <t>ARDP operates as a control-plane protocol for registration and discovery. It is designed to compose with other layers of the agent ecosystem:</t>
+      <t><list style="symbols">
+        <t>Transport Security: ARDP endpoints are typically secured using TLS, mTLS, or QUIC. Transport security is orthogonal to ARDP semantics.</t>
+        <t>Identity Governance and Attestation: ARDP uses identity attestations as inputs for proof-of-control during registration and for authorization decisions. The issuance, revocation, and governance of these attestations are handled by external identity frameworks.</t>
+        <t>Bootstrap Mechanisms: Clients may use DNS-based discovery, well-known URIs, or other mechanisms to locate ARDP registrars and resolvers. ARDP does not prescribe a specific bootstrap method.</t>
+        <t>Interaction Protocols: Once an agent's endpoint and capabilities are discovered via ARDP, clients select an appropriate interaction protocol (MCP, A2A, HTTP, gRPC) based on the advertised capabilities. ARDP does not define interaction semantics.</t>
+      </list></t>
+      <t>ARDP does not specify runtime enforcement mechanisms, session semantics, or evidence/audit systems. These concerns are delegated to the appropriate layers.</t>
+    </section>
+
+    <section title="Agent Identity">
+      <t>Each agent <bcp14>SHALL</bcp14> have a unique AID. The authority component denotes the administrative authority responsible for the identity.</t>
+      <t>Agents <bcp14>MUST</bcp14> prove control of an AID during registration using cryptographic credentials bound to that identity.</t>
+
+      <section title="AID Syntax">
+        <t>An ARDP Agent Identifier (AID) <bcp14>MUST</bcp14> follow this grammar (ABNF per RFC 5234):</t>
+        <figure>
+          <artwork><![CDATA[
+aid              = "agent:" local-id "@" authority
+local-id         = 1*( ALPHA / DIGIT / "_" / "-" / "." / "/" )
+authority        = dns-name / internal-name / opaque-authority
+dns-name         = 1*( ALPHA / DIGIT / "-" / "." )  ; see IDNA2008 notes
+internal-name    = 1*( ALPHA / DIGIT / "-" / "." )
+opaque-authority = "tenant-" 1*( ALPHA / DIGIT / "-" )
+]]></artwork>
+        </figure>
+        <t>Note: When internationalized domain names are used, implementers should follow the IDNA2008 RFC series.</t>
+      </section>
+
+      <section title="Canonical Form">
+        <t>The canonical AID string is:</t>
+        <t><list style="numbers">
+          <t>The literal prefix <tt>agent:</tt> in lowercase.</t>
+          <t>The authority normalized to lowercase (including IDNA2008 normalization where applicable); internal-name is lowercased as-is.</t>
+          <t><tt>local-id</tt> is case-sensitive and <bcp14>MUST</bcp14> be preserved as sent.</t>
+          <t>AIDs <bcp14>MUST</bcp14> be compared using the canonical form.</t>
+        </list></t>
+      </section>
+    </section>
+
+    <section title="Registration Model">
+      <section title="REGISTER">
+        <t>A REGISTER request includes: AID; one or more endpoints; capability document (versioned); TTL; and cryptographic proof.</t>
+        <t>Registrations are soft-state and <bcp14>MUST</bcp14> be refreshed before expiration. Refresh is performed by sending a new REGISTER request with the same (<tt>aid</tt>, <tt>binding_id</tt>) pair.</t>
+      </section>
+
+      <section title="DEREGISTER">
+        <t>An agent <bcp14>MAY</bcp14> explicitly remove its registration.</t>
+      </section>
+
+      <section title="Registration Semantics">
+        <t>Registration is idempotent on (<tt>aid</tt>, <tt>binding_id</tt>). If a client sends the same (<tt>aid</tt>, <tt>binding_id</tt>), the server
+        <bcp14>MUST</bcp14> treat it as a refresh.</t>
+        <t>If a client sends the same <tt>aid</tt> with a different <tt>binding_id</tt>, the server <bcp14>MUST</bcp14> return a conflict error unless the
+        client has <tt>registry:override</tt> scope.</t>
+      </section>
+
+      <section title="TTL and Refresh">
+        <t>The server <bcp14>MUST</bcp14> be authoritative for <tt>expires_at</tt> and <bcp14>SHOULD</bcp14> return it in responses.</t>
+        <t>Clients <bcp14>SHOULD</bcp14> refresh at &lt;= 0.5 * ttl with random jitter.</t>
+        <t>The server <bcp14>MUST</bcp14> define and enforce TTL bounds and advertise them in a metadata resource (recommended: <tt>/.well-known/ardp/meta</tt>).</t>
+      </section>
+
+      <section title="Meta Resource">
+        <t>This section defines a metadata resource for deployments using HTTPS bindings.</t>
+        <t>Path: <tt>GET /.well-known/ardp/meta</tt></t>
+        <t>The response advertises server capabilities, TTL bounds, supported protocols, and proof-of-control requirements:</t>
+        <figure>
+          <artwork><![CDATA[
+{
+  "version": "1.0",
+  "registrar_id": "ardp.example.com",
+  "min_ttl": 30,
+  "max_ttl": 3600,
+  "default_ttl": 300,
+  "supported_protocols": ["MCP", "A2A", "HTTP", "gRPC"],
+  "supported_auth_methods": ["jws-proof-of-control"],
+  "jws_required": true,
+  "nonce_endpoint": "/.well-known/ardp/nonce",
+  "supported_schema_versions": ["v0"],
+  "compliance_mode": "standard"
+}
+]]></artwork>
+        </figure>
+        <t>When <tt>jws_required</tt> is true, the <tt>nonce_endpoint</tt> field indicates where clients acquire nonces for proof-of-control.</t>
+      </section>
+    </section>
+
+    <section title="Discovery and Resolution">
+      <section title="RESOLVE">
+        <t>RESOLVE maps an AID to active endpoints and capabilities. Access <bcp14>MUST</bcp14> be authorized via the <tt>registry:resolve</tt> scope.</t>
+      </section>
+
+      <section title="QUERY">
+        <t>QUERY allows authorized discovery by capability or namespace. Results <bcp14>SHOULD</bcp14> be minimized to prevent metadata leakage.</t>
+        <t>Access <bcp14>MUST</bcp14> be authorized via the <tt>registry:query</tt> scope.</t>
+      </section>
+
+      <section title="Privacy Defaults and Redaction">
+        <t>By default, QUERY returns only <tt>aid</tt> and <tt>status</tt>. Clients <bcp14>MAY</bcp14> request full details via a <tt>detail=full</tt> parameter.</t>
+        <t>If redaction applies, the server <bcp14>MUST</bcp14> omit restricted fields and include <tt>"redacted": true</tt> in the response.</t>
+      </section>
+    </section>
+
+    <section title="Capabilities">
+      <t>Capability documents <bcp14>MAY</bcp14> include supported protocols (MCP, A2A, HTTP, gRPC), transport bindings, authentication mechanisms,
+      modalities, rate or cost hints, and protocol-specific metadata. Capabilities are declarative and do not imply authorization.</t>
+
+      <section title="Capability Bindings">
+        <t>Capabilities <bcp14>MUST</bcp14> include protocol-specific bindings when a protocol is declared.</t>
+      </section>
+    </section>
+
+    <section title="Presence and Health">
+      <t>Presence is limited to: <tt>online</tt>, <tt>offline</tt>, <tt>degraded</tt>.</t>
+    </section>
+
+    <section title="Security Considerations">
+      <t>Threats include identity spoofing, registration poisoning, unauthorized discovery, replay and downgrade attacks, and registrar compromise.</t>
+      <t>Mitigations include cryptographic identity proof, signed registrations, strict authorization, rate limiting, and audit logging.</t>
+
+      <section title="Proof of Control">
+        <t>Proof-of-control is <bcp14>REQUIRED</bcp14> for REGISTER and refresh operations. RESOLVE and QUERY do not use proof-of-control; they are authorized via scopes (see Authorization Scopes below).</t>
+
+        <section title="Signed Payload">
+          <t>Clients <bcp14>MUST</bcp14> present a JWS-signed proof when registering or refreshing. The signed payload consists of:</t>
+          <t><list style="symbols">
+            <t>The registration body, serialized as deterministic JSON</t>
+            <t>A server-provided <tt>nonce</tt></t>
+            <t>An <tt>issued_at</tt> timestamp in RFC 3339 format</t>
+          </list></t>
+        </section>
+
+        <section title="Deterministic JSON Serialization">
+          <t>The registration body <bcp14>MUST</bcp14> be serialized using deterministic JSON with the following rules:</t>
+          <t><list style="symbols">
+            <t>Object keys are sorted lexicographically (Unicode code point order)</t>
+            <t>No insignificant whitespace between tokens</t>
+            <t>Array element order is preserved</t>
+            <t>Strings are encoded as UTF-8</t>
+            <t>Numbers use minimal representation without trailing zeros</t>
+          </list></t>
+        </section>
+
+        <section title="Nonce Acquisition">
+          <t>Clients acquire nonces via:</t>
+          <t><tt>GET /.well-known/ardp/nonce</tt></t>
+          <t>The response is a JSON object:</t>
+          <figure>
+            <artwork><![CDATA[
+{
+  "nonce": "abc123...",
+  "expires_in": 300
+}
+]]></artwork>
+          </figure>
+          <t>Nonces are single-use or have a narrow replay window. The recommended TTL is 300 seconds. The nonce endpoint is advertised in the <tt>/meta</tt> response when JWS proof-of-control is required.</t>
+        </section>
+
+        <section title="Verification">
+          <t>Servers <bcp14>MUST</bcp14> verify the JWS using a JWKS key set (RFC 7517) or a configured trust store.</t>
+          <t>Servers <bcp14>MUST</bcp14> enforce replay windows and clock skew tolerances.</t>
+        </section>
+
+        <section title="Algorithm Support">
+          <t>Implementations <bcp14>MUST</bcp14> support ES256 (ECDSA using P-256 and SHA-256).</t>
+          <t>Implementations <bcp14>MAY</bcp14> additionally support: RS256, RS384, RS512, PS256, PS384, PS512, ES384, ES512.</t>
+          <t>EdDSA is not currently supported.</t>
+        </section>
+      </section>
+
+      <section title="Authorization Scopes">
+        <t>Proof-of-control is used for REGISTER and refresh operations. Authorization scopes apply to all operations and are the primary access control mechanism for RESOLVE and QUERY.</t>
+        <t>Operations require the following scopes:</t>
+        <t><list style="symbols">
+          <t><tt>registry:register</tt> - required for REGISTER</t>
+          <t><tt>registry:refresh</tt> - required for refresh (re-REGISTER with same binding_id)</t>
+          <t><tt>registry:resolve</tt> - required for RESOLVE</t>
+          <t><tt>registry:query</tt> - required for QUERY</t>
+          <t><tt>registry:deregister</tt> - required for DEREGISTER</t>
+          <t><tt>registry:override</tt> - allows registering with a different binding_id for an existing AID</t>
+        </list></t>
+      </section>
+    </section>
+
+    <section title="Federation">
+      <t>Registrars <bcp14>MAY</bcp14> federate across domains via explicit trust relationships and policy agreements.</t>
+
+      <section title="Federation Profile (Minimum)">
+        <t>Federation is allowed only between explicit trust anchors.</t>
+        <t>Responses from remote registrars <bcp14>MUST</bcp14> include provenance fields: <tt>origin_authority</tt>, <tt>origin_registrar_id</tt>, <tt>origin_signature</tt>.</t>
+        <t>Caches <bcp14>MUST</bcp14> honor remote TTL and mark records as federated.</t>
+      </section>
+    </section>
+
+    <section title="Relationship to Existing Protocols">
+      <t>ARDP complements, and does not replace, agent interaction protocols such as MCP and A2A.</t>
+    </section>
+
+    <section title="Wire Format Sketch (Non-Normative)">
+      <t>JSON over HTTPS is shown as an example binding. Alternative encodings (e.g., CBOR, gRPC) are possible.</t>
+
+      <section title="Minimal HTTPS Binding">
+        <t>This section describes a minimal HTTPS binding for ARDP operations. All endpoints are under the <tt>/.well-known/ardp/</tt> path prefix.</t>
+        <t><list style="symbols">
+          <t><tt>GET /.well-known/ardp/meta</tt> - Returns server metadata including TTL bounds, supported protocols, and proof-of-control requirements.</t>
+          <t><tt>GET /.well-known/ardp/nonce</tt> - Returns a JSON object with <tt>nonce</tt> and <tt>expires_in</tt> fields for use in proof-of-control.</t>
+          <t><tt>POST /.well-known/ardp/register</tt> - Registers or refreshes an agent. Refresh is performed by re-registering with the same (<tt>aid</tt>, <tt>binding_id</tt>).</t>
+          <t><tt>POST /.well-known/ardp/deregister</tt> - Removes an agent registration.</t>
+          <t><tt>GET /.well-known/ardp/resolve?aid={aid}</tt> - Resolves an AID to endpoints and capabilities.</t>
+          <t><tt>GET /.well-known/ardp/query</tt> - Queries for agents by capability or namespace. Supports parameters: <tt>protocol</tt>, <tt>schema</tt>, <tt>limit</tt>, <tt>offset</tt>, <tt>detail</tt>. Default returns minimal data; use <tt>detail=full</tt> to request complete records.</t>
+        </list></t>
+      </section>
+
+      <section title="Error Model">
+        <t>Servers <bcp14>MUST</bcp14> return errors with: <tt>code</tt> (stable error code), <tt>message</tt> (human-readable), and <tt>correlation_id</tt> (for tracing).</t>
+        <t>Required codes: <tt>invalid_aid</tt>, <tt>unauthorized</tt>, <tt>forbidden</tt>, <tt>conflict</tt>, <tt>not_found</tt>, <tt>expired</tt>.</t>
+      </section>
+    </section>
+
+    <section title="IANA Considerations">
+      <section title="Well-Known URI">
+        <t>IANA is requested to register the following URI suffix per RFC 8615 in the "Well-Known URIs" registry:</t>
+        <t>URI suffix: <tt>ardp</tt></t>
+        <t>Change controller: IETF</t>
+        <t>Specification document(s): This document</t>
+      </section>
+
+      <section title="Agent Identifier Namespace">
+        <t>The <tt>agent:</tt> prefix is used as an internal identifier namespace and is not registered as a URI scheme in this version.</t>
+      </section>
+    </section>
+
+    <section title="Capability Schema v0">
+      <t>A minimal JSON schema for capability documents is provided as a companion artifact in the GitHub mirror.</t>
+    </section>
+
+    <section title="Open Issues">
+      <t><list style="symbols">
+        <t>Capability schema evolution</t>
+        <t>Privacy-preserving discovery</t>
+        <t>Federation bootstrapping</t>
+        <t>Consider adopting RFC 8785 (JSON Canonicalization Scheme) for deterministic JSON serialization in a future revision</t>
+      </list></t>
+    </section>
+  </middle>
+
+  <back>
+    <references>
+      <reference anchor="RFC2119">
+        <front>
+          <title>Key words for use in RFCs to Indicate Requirement Levels</title>
+          <author surname="Bradner" initials="S."/>
+          <date year="1997"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="2119"/>
+      </reference>
+      <reference anchor="RFC8174">
+        <front>
+          <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+          <author surname="Leiba" initials="B."/>
+          <date year="2017"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="8174"/>
+      </reference>
+      <reference anchor="RFC3339">
+        <front>
+          <title>Date and Time on the Internet: Timestamps</title>
+          <author surname="Klyne" initials="G."/>
+          <author surname="Newman" initials="C."/>
+          <date year="2002"/>
+        </front>
+        <seriesInfo name="RFC" value="3339"/>
+      </reference>
+      <reference anchor="RFC5234">
+        <front>
+          <title>Augmented BNF for Syntax Specifications: ABNF</title>
+          <author surname="Crocker" initials="D."/>
+          <author surname="Overell" initials="P."/>
+          <date year="2008"/>
+        </front>
+        <seriesInfo name="STD" value="68"/>
+        <seriesInfo name="RFC" value="5234"/>
+      </reference>
+      <reference anchor="RFC5890">
+        <front>
+          <title>Internationalized Domain Names for Applications (IDNA): Definitions and Document Framework</title>
+          <author surname="Klensin" initials="J."/>
+          <date year="2010"/>
+        </front>
+        <seriesInfo name="RFC" value="5890"/>
+      </reference>
+      <reference anchor="RFC7515">
+        <front>
+          <title>JSON Web Signature (JWS)</title>
+          <author surname="Jones" initials="M."/>
+          <author surname="Bradley" initials="J."/>
+          <author surname="Sakimura" initials="N."/>
+          <date year="2015"/>
+        </front>
+        <seriesInfo name="RFC" value="7515"/>
+      </reference>
+      <reference anchor="RFC7517">
+        <front>
+          <title>JSON Web Key (JWK)</title>
+          <author surname="Jones" initials="M."/>
+          <author surname="Bradley" initials="J."/>
+          <author surname="Sakimura" initials="N."/>
+          <date year="2015"/>
+        </front>
+        <seriesInfo name="RFC" value="7517"/>
+      </reference>
+      <reference anchor="RFC8615">
+        <front>
+          <title>Well-Known Uniform Resource Identifiers (URIs)</title>
+          <author surname="Nottingham" initials="M."/>
+          <date year="2019"/>
+        </front>
+        <seriesInfo name="RFC" value="8615"/>
+      </reference>
+    </references>
+  </back>
+</rfc>
